@@ -1,0 +1,61 @@
+#Script to Kill runaway Form processes
+. Source your ENV file here
+
+proc_file=$SCRITP_LOG_HOME/prc_id.log; export proc_file
+op_log=$SCRITP_LOG_HOME/sess_proc_id.log; export op_log
+op_log2=$SCRITP_LOG_HOME/frmswb_runawy_hist.log; export op_log2
+op_log3=$SCRITP_LOG_HOME/grep_proc_id.sh; export op_log3
+op_log4=$SCRITP_LOG_HOME/kill_proc_id.sh; export op_log4
+tmp_log=$SCRITP_LOG_HOME/temp_frm_sess.log; export tmp_log
+dateis=`date +"%a""  ""%d"/"%b"/"%Y""  ""%H":"%M":"%S"`; export dateis
+
+proc_id_list=`ps -ef|grep -i frmweb|grep -v grep|awk '{print $2}' > $proc_file`; export proc_id_list
+
+loop_list=`cat $proc_file`;export loop_list
+
+for i in $loop_list
+do
+sqlplus -s system/password << EOF >> $op_log
+set serveroutput on;
+set feedback off;
+declare
+prcs_id varchar2(30) :='$i';
+lv_n_process varchar2(30);
+begin
+select distinct process into lv_n_process from
+v\$session
+where process =prcs_id;
+exception
+when no_data_found then
+dbms_output.put_line('No Database Sessions For Process: '||prcs_id);
+end;
+/
+exit;
+EOF
+done
+
+op_count=`cat $op_log|grep -i "No Database Sessions For Process:"|wc -l`;export op_count
+proc_grep=`cat $op_log|grep -i "No Database Sessions For Process:"|awk '{print "ps -ef|grep -i " $6 " |grep -i frmweb"}' > $op_log3`;export proc_grep
+#echo $op_count
+if [ $op_count = 0 ]
+then
+echo -e "########################################################################## \n" >> $op_log2
+echo -e "No Runaway Form Processes during last run at $dateis \n" >> $op_log2
+echo -e "########################################################################## \n" >> $op_log2
+else
+echo -e "########################################################################## \n" >> $op_log2
+echo -e "\tRunaway Form Processes during last run at $dateis as follows," >> $op_log2
+cat $op_log >> $op_log2
+echo -e "\n" >> $op_log2
+echo -e "\t\tGrepping the Form Processes(These Runaway Processes are going to be killed!!!!)" >> $op_log2
+sh "$op_log3"|grep -v grep >> $op_log2
+echo -e "\n" >> $op_log2
+sh "$op_log3"|grep -v grep|awk '{print "kill -9 "$2}' > $op_log4
+echo -e "\tRunaway Processes that are killed!!!!" >> $op_log2
+cat $op_log4 >> $op_log2
+sh "$op_log4" >> $op_log2
+echo -e "\n" >> $op_log2
+echo -e "########################################################################## \n" >> $op_log2
+fi
+#cat $op_log > $tmp_log
+>$op_log
